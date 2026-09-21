@@ -42,7 +42,7 @@ import kotlinx.coroutines.flow.first
 @Composable
 fun HomeScreen(state: HomeUiState, onQuery: (String) -> Unit, onSearch: () -> Boolean, onOpen: (String) -> Unit) {
     var editing by rememberSaveable { mutableStateOf(false) }
-    var selectedId by rememberSaveable { mutableStateOf("baidu") }
+    var selectedId by rememberSaveable { mutableStateOf("memoir") }
     val cardFocus = remember(state.bookmarks) { state.bookmarks.associate { it.id to FocusRequester() } }
     val searchFocus = remember { FocusRequester() }
     val gridState = rememberLazyGridState()
@@ -95,7 +95,7 @@ fun HomeScreen(state: HomeUiState, onQuery: (String) -> Unit, onSearch: () -> Bo
                     Spacer(Modifier.width(12.dp))
                     Text("发现你的下一份精彩", color=Muted, fontSize=13.sp)
                     Spacer(Modifier.weight(1f))
-                    Text("精选导航  ·  06", color=Muted, fontSize=12.sp)
+                    Text("精选导航  ·  ${state.bookmarks.size.toString().padStart(2, '0')}", color=Muted, fontSize=12.sp)
                 }
             }
             itemsIndexed(state.bookmarks, key={ _, item -> item.id }) { index, bookmark ->

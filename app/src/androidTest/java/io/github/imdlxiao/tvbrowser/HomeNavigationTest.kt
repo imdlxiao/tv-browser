@@ -13,10 +13,10 @@ class HomeNavigationTest {
 
     @Test fun remoteMovesBetweenBookmarksAndSearch() {
         compose.waitUntil(5000) {
-            compose.onAllNodes(hasText("百度") and isFocused()).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodes(hasText("回忆录") and isFocused()).fetchSemanticsNodes().isNotEmpty()
         }
         key(KeyEvent.KEYCODE_DPAD_RIGHT)
-        compose.onNode(hasText("哔哩哔哩") and hasClickAction()).assertIsFocused()
+        compose.onNode(hasText("百度") and hasClickAction()).assertIsFocused()
         key(KeyEvent.KEYCODE_DPAD_UP)
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         compose.onNodeWithText("想去哪里？").assertIsDisplayed()

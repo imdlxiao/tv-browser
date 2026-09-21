@@ -29,12 +29,12 @@ class LocalBookmarkRepository(private val preferences: SharedPreferences) : Book
                 require(items.map { it.id }.distinct().size == items.size)
                 require(items.all { it.id.isNotBlank() && AddressResolver.isWebUrl(it.url) })
             }
-        }.getOrDefault(defaults)
+        }.getOrDefault(defaults).withPinnedBookmark()
     }
 
     override suspend fun save(bookmarks: List<Bookmark>) = withContext(Dispatchers.IO) {
         val array = JSONArray()
-        bookmarks.forEach { bookmark ->
+        bookmarks.withPinnedBookmark().forEach { bookmark ->
             array.put(JSONObject().put("id", bookmark.id).put("title", bookmark.title)
                 .put("url", bookmark.url).put("caption", bookmark.caption))
         }
@@ -42,7 +42,19 @@ class LocalBookmarkRepository(private val preferences: SharedPreferences) : Book
     }
 
     companion object {
+        private val pinnedBookmark = Bookmark(
+            "memoir", "回忆录", "http://Abyss.local:8765/", "重温时光，珍藏每一刻",
+        )
+
+        /** Keep the pinned entry first even when upgrading an existing saved collection. */
+        private fun List<Bookmark>.withPinnedBookmark(): List<Bookmark> =
+            listOf(pinnedBookmark) + filterNot {
+                it.id == pinnedBookmark.id ||
+                    it.url.trimEnd('/').equals(pinnedBookmark.url.trimEnd('/'), ignoreCase = true)
+            }
+
         val defaults = listOf(
+            pinnedBookmark,
             Bookmark("baidu", "百度", "https://www.baidu.com", "搜索世界，发现答案"),
             Bookmark("bilibili", "哔哩哔哩", "https://www.bilibili.com", "让兴趣，在大屏相遇"),
             Bookmark("iqiyi", "爱奇艺", "https://www.iqiyi.com", "好故事，值得看见"),
