@@ -54,6 +54,22 @@ class BrowserNavigationTest {
         }
     }
 
+    @Test fun connectionFailureKeepsRealErrorAndMovesRemoteFocusToRetry() {
+        val port = ServerSocket(0).use { it.localPort }
+        compose.onNodeWithText("搜索你喜欢的内容，或输入网址").performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("http://127.0.0.1:$port/")
+        compose.onNodeWithText("前往").performClick()
+        compose.waitUntil(15000) { compose.onAllNodesWithText("网页未能打开").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("ERROR_CONNECT", substring=true).assertExists()
+        compose.waitUntil(5000) { compose.onAllNodes(hasText("重新打开") and isFocused()).fetchSemanticsNodes().isNotEmpty() }
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
+        compose.onNodeWithText("连接诊断").assertIsFocused()
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
+        compose.onNodeWithText("修改地址").assertIsFocused()
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
+        compose.onNodeWithText("修改访问地址").assertExists()
+    }
+
     private fun awaitTitle(title: String) {
         try {
             compose.waitUntil(15000) { compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty() }

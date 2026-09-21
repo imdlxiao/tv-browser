@@ -28,7 +28,8 @@ fun BrowserApp(model: HomeViewModel) {
         }
         BackHandler { showExit = true }
     } else {
-        BrowserScreen(url, model::home)
+        val bookmark = state.bookmarks.firstOrNull { it.url.trimEnd('/').equals(url.trimEnd('/'), true) }
+        BrowserScreen(url, model::home, bookmark?.let { entry -> { address -> model.updateBookmarkAddress(entry.id, address) } })
     }
     if (showExit) {
         AlertDialog(

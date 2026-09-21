@@ -18,7 +18,12 @@ object AddressResolver {
             return value.takeIf(::isWebUrl)
         }
         if ('.' in value && value.none(Char::isWhitespace)) {
-            return "https://$value".takeIf(::isWebUrl)
+            val host = runCatching { URI("http://$value").host.orEmpty().lowercase(Locale.ROOT) }.getOrDefault("")
+            val octets = host.split('.').mapNotNull { it.toIntOrNull() }
+            val privateIpv4 = octets.size == 4 && octets.all { it in 0..255 } &&
+                (octets[0] == 10 || (octets[0] == 192 && octets[1] == 168) || (octets[0] == 172 && octets[1] in 16..31))
+            val local = host.endsWith(".local") || privateIpv4
+            return "${if (local) "http" else "https"}://$value".takeIf(::isWebUrl)
         }
         return "https://www.baidu.com/s?wd=" + URLEncoder.encode(value, "UTF-8")
     }

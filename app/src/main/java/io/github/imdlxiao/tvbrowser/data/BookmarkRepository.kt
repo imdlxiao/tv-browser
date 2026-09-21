@@ -48,7 +48,7 @@ class LocalBookmarkRepository(private val preferences: SharedPreferences) : Book
 
         /** Keep the pinned entry first even when upgrading an existing saved collection. */
         private fun List<Bookmark>.withPinnedBookmark(): List<Bookmark> =
-            listOf(pinnedBookmark) + filterNot {
+            listOf(firstOrNull { it.id == pinnedBookmark.id && AddressResolver.isWebUrl(it.url) } ?: pinnedBookmark) + filterNot {
                 it.id == pinnedBookmark.id ||
                     it.url.trimEnd('/').equals(pinnedBookmark.url.trimEnd('/'), ignoreCase = true)
             }

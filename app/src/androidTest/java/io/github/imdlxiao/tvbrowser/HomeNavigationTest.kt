@@ -30,12 +30,16 @@ class HomeNavigationTest {
     @Test fun homeBackShowsExitConfirmationAndCanResume() {
         compose.waitUntil(5000) { compose.onAllNodesWithText("百度").fetchSemanticsNodes().isNotEmpty() }
         key(KeyEvent.KEYCODE_BACK)
+        compose.waitUntil(5000) { compose.onAllNodesWithText("结束这次探索？").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitForIdle()
         compose.onNodeWithText("结束这次探索？").assertIsDisplayed()
         compose.onNodeWithText("继续浏览").performClick()
         compose.onNodeWithText("常用网站").assertIsDisplayed()
     }
 
     private fun key(code: Int) {
+        compose.waitUntil(5000) { compose.runOnUiThread { compose.activity.hasWindowFocus() } }
+        compose.waitForIdle()
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(code)
         compose.waitForIdle()
     }

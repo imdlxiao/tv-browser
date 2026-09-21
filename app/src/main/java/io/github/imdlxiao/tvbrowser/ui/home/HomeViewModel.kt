@@ -20,7 +20,7 @@ data class HomeUiState(
 )
 
 /** Search and durable navigation state; never owns Android View references. */
-class HomeViewModel(repository: BookmarkRepository, private val savedState: SavedStateHandle) : ViewModel() {
+class HomeViewModel(private val repository: BookmarkRepository, private val savedState: SavedStateHandle) : ViewModel() {
     private val mutableState = MutableStateFlow(HomeUiState(
         query = savedState["query"] ?: "", browserUrl = savedState["browserUrl"],
     ))
@@ -55,5 +55,20 @@ class HomeViewModel(repository: BookmarkRepository, private val savedState: Save
     fun home() {
         savedState["browserUrl"] = null
         mutableState.update { it.copy(browserUrl = null) }
+    }
+
+    fun updateBookmarkAddress(id: String, url: String) {
+        if (!AddressResolver.isWebUrl(url)) return
+        viewModelScope.launch {
+            val previous = uiState.value.bookmarks.firstOrNull { it.id == id }?.url
+            val updated = uiState.value.bookmarks.map { if (it.id == id) it.copy(url=url) else it }
+            try {
+                repository.save(updated)
+                if (uiState.value.browserUrl == previous) savedState["browserUrl"] = url
+                mutableState.update { it.copy(bookmarks=updated, browserUrl=if (it.browserUrl == previous) url else it.browserUrl) }
+            } catch (_: Exception) {
+                mutableState.update { it.copy(error="收藏地址未能保存，请重试") }
+            }
+        }
     }
 }

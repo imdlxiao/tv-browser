@@ -15,9 +15,9 @@ android {
         applicationId = "io.github.imdlxiao.tvbrowser"
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
-        ndk { abiFilters += "armeabi-v7a" }
+        versionCode = 3
+        versionName = "1.1.0"
+        ndk { abiFilters += providers.gradleProperty("testAbi").orElse("armeabi-v7a").get() }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -29,6 +29,25 @@ class HomeViewModelTest {
         assertEquals(sites, model.uiState.value.bookmarks)
     }
 
+    @Test fun `bookmark correction persists and updates current saved destination`() = runTest(dispatcher) {
+        var stored = sites
+        val writable = object : BookmarkRepository {
+            override suspend fun load() = stored
+            override suspend fun save(bookmarks: List<Bookmark>) { stored=bookmarks }
+        }
+        val handle = SavedStateHandle()
+        val model = HomeViewModel(writable, handle)
+        advanceUntilIdle()
+        model.open(sites.first().url)
+        model.updateBookmarkAddress("sample", "http://192.168.1.12:8765/")
+        advanceUntilIdle()
+        assertEquals("http://192.168.1.12:8765/", stored.first().url)
+        assertEquals(stored.first().url, handle.get<String>("browserUrl"))
+        model.updateBookmarkAddress("sample", "javascript:alert(1)")
+        advanceUntilIdle()
+        assertEquals("http://192.168.1.12:8765/", model.uiState.value.bookmarks.first().url)
+    }
+
     @Test fun `invalid search stays on home and exposes error`() = runTest(dispatcher) {
         val model = HomeViewModel(repository, SavedStateHandle())
         model.updateQuery("javascript:alert(1)")

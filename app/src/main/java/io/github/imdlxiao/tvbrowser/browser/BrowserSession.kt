@@ -11,6 +11,7 @@ import android.webkit.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlin.concurrent.thread
 
 data class BrowserUiState(
     val url: String = "",
@@ -20,6 +21,9 @@ data class BrowserUiState(
     val error: String? = null,
     val notice: String? = null,
     val rendererLost: Boolean = false,
+    val diagnostics: String? = null,
+    val diagnosing: Boolean = false,
+    val engine: String = "",
 )
 
 /**
@@ -30,6 +34,11 @@ class BrowserSession(private var restoredState: Bundle? = null) {
     var state by mutableStateOf(BrowserUiState())
         private set
     private var view: WebView? = null
+    var fullscreenView by mutableStateOf<android.view.View?>(null)
+        private set
+    private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
+    private var replayingKey = false
+    private var navigationScript = ""
     var requestToolbarFocus: () -> Unit = {}
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -37,6 +46,9 @@ class BrowserSession(private var restoredState: Bundle? = null) {
         state = state.copy(url=initialUrl, error=null, rendererLost=false)
         return WebView(context).apply {
             view = this
+            navigationScript = context.assets.open("remote-navigation.js").bufferedReader().use { it.readText() }
+            val provider = if (android.os.Build.VERSION.SDK_INT >= 26) WebView.getCurrentWebViewPackage()?.let { "${it.packageName} ${it.versionName}" } else null
+            state = state.copy(engine="Android ${android.os.Build.VERSION.RELEASE} · WebView ${provider ?: settings.userAgentString}")
             setBackgroundColor(android.graphics.Color.WHITE)
             isFocusable = true
             isFocusableInTouchMode = true
@@ -57,12 +69,23 @@ class BrowserSession(private var restoredState: Bundle? = null) {
             }
             setOnKeyListener { _, keyCode, event ->
                 when {
+                    replayingKey -> false
                     keyCode == KeyEvent.KEYCODE_MENU -> {
                         if (event.action == KeyEvent.ACTION_UP) requestToolbarFocus()
                         true
                     }
-                    keyCode == KeyEvent.KEYCODE_DPAD_UP && !canScrollVertically(-1) && !hasEditableFocus() -> {
-                        if (event.action == KeyEvent.ACTION_DOWN) requestToolbarFocus()
+                    keyCode in directionKeys -> {
+                        if (event.action == KeyEvent.ACTION_DOWN) {
+                            val saved = KeyEvent(event)
+                            navigate(directionKeys.getValue(keyCode)) { result ->
+                                if (result == "toolbar") requestToolbarFocus()
+                                else if (result != "handled") {
+                                    replayingKey = true
+                                    try { dispatchKeyEvent(saved); dispatchKeyEvent(KeyEvent.changeAction(saved, KeyEvent.ACTION_UP)) }
+                                    finally { replayingKey = false }
+                                }
+                            }
+                        }
                         true
                     }
                     else -> false
@@ -77,12 +100,14 @@ class BrowserSession(private var restoredState: Bundle? = null) {
                     blockUnsupported(url)
 
                 override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-                    state = state.copy(url=url, loading=true, progress=0, error=null, notice=null)
+                    state = state.copy(url=url, loading=true, progress=0, error=null, notice=null, diagnostics=null, diagnosing=false)
                 }
 
                 override fun onPageFinished(view: WebView, url: String) {
                     state = state.copy(url=url, title=view.title.orEmpty().ifBlank { "网页" },
                         loading=false, progress=100)
+                    view.evaluateJavascript(navigationScript, null)
+                    CookieManager.getInstance().flush()
                 }
 
                 override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
@@ -90,16 +115,16 @@ class BrowserSession(private var restoredState: Bundle? = null) {
                 }
 
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                    if (request.isForMainFrame) fail("网页暂时无法打开，请检查网络后重试。")
+                    if (request.isForMainFrame) fail(NavigationFailure.web(error.errorCode, error.description.toString(), request.url.toString()).display())
                 }
 
                 override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
-                    if (request.isForMainFrame) fail("网站暂时无法提供此页面（" + response.statusCode + "）。")
+                    if (request.isForMainFrame) fail("HTTP ${response.statusCode} · ${response.reasonPhrase}\n${NavigationFailure.safeUrl(request.url.toString())}\n已连接网站，但服务器拒绝或无法处理此页面；401/403 表示登录或权限问题。")
                 }
 
                 override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
                     handler.cancel()
-                    if (error.url == state.url) fail("网站安全证书异常，已停止连接。")
+                    if (error.url == state.url) fail("SSL_CERTIFICATE_ERROR (${error.primaryError})\n${NavigationFailure.safeUrl(error.url)}\n网站证书异常，连接已停止。请检查电视日期和网站证书。")
                     else state = state.copy(notice="已拦截证书异常的网页资源")
                 }
 
@@ -112,6 +137,19 @@ class BrowserSession(private var restoredState: Bundle? = null) {
                 }
             }
             webChromeClient = object : WebChromeClient() {
+                override fun onShowCustomView(custom: android.view.View, callback: CustomViewCallback) {
+                    if (fullscreenView != null) { callback.onCustomViewHidden(); return }
+                    fullscreenCallback = callback
+                    fullscreenView = custom
+                    custom.isFocusableInTouchMode = true
+                    custom.setOnKeyListener { _, code, event ->
+                        if (code in directionKeys || code == KeyEvent.KEYCODE_DPAD_CENTER ||
+                            code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_MENU ||
+                            code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) this@apply.dispatchKeyEvent(event) else false
+                    }
+                    custom.requestFocus()
+                }
+                override fun onHideCustomView() { exitFullscreen() }
                 override fun onProgressChanged(view: WebView, newProgress: Int) {
                     state = state.copy(progress=newProgress)
                 }
@@ -126,8 +164,37 @@ class BrowserSession(private var restoredState: Bundle? = null) {
         }
     }
 
-    private fun WebView.hasEditableFocus(): Boolean =
-        hitTestResult?.type == WebView.HitTestResult.EDIT_TEXT_TYPE
+    private val directionKeys = mapOf(KeyEvent.KEYCODE_DPAD_UP to "ArrowUp", KeyEvent.KEYCODE_DPAD_DOWN to "ArrowDown",
+        KeyEvent.KEYCODE_DPAD_LEFT to "ArrowLeft", KeyEvent.KEYCODE_DPAD_RIGHT to "ArrowRight",
+        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE to "MediaPlayPause", KeyEvent.KEYCODE_MEDIA_PLAY to "MediaPlay",
+        KeyEvent.KEYCODE_MEDIA_PAUSE to "MediaPause", KeyEvent.KEYCODE_MEDIA_FAST_FORWARD to "MediaFastForward",
+        KeyEvent.KEYCODE_MEDIA_REWIND to "MediaRewind")
+
+    private fun navigate(key: String, done: (String) -> Unit = {}) {
+        val current = view ?: return done("unhandled")
+        current.evaluateJavascript(navigationScript + "\nwindow.__tvBrowserNavigate(${org.json.JSONObject.quote(key)});") { value ->
+            if (view === current) done(value.trim('"'))
+        }
+    }
+
+    fun back(onHome: () -> Unit) {
+        if (fullscreenView != null) { exitFullscreen(); return }
+        if (state.error != null) { if (!goBack()) onHome(); return }
+        navigate("Back") { if (it != "handled" && !goBack()) onHome() }
+    }
+
+    fun load(url: String) { if (AddressResolver.isWebUrl(url)) { state=state.copy(url=url, error=null); view?.loadUrl(url) } }
+
+    fun diagnose() {
+        if (state.diagnosing) return
+        val url = state.url
+        val current = view ?: return
+        state = state.copy(diagnosing=true, diagnostics="正在检查 DNS 与目标端口…")
+        thread(isDaemon=true, name="tv-network-diagnostics") {
+            val result = NetworkDiagnostics.check(url)
+            current.post { if (view === current && state.url == url) state=state.copy(diagnosing=false, diagnostics=result) }
+        }
+    }
 
     private fun blockUnsupported(url: String): Boolean {
         if (AddressResolver.isWebUrl(url)) return false
@@ -151,7 +218,15 @@ class BrowserSession(private var restoredState: Bundle? = null) {
         view?.reload()
     }
 
-    fun focusPage() { view?.requestFocus() }
+    fun focusPage() { if (state.error == null) { view?.requestFocus(); navigate("Focus") } }
+    fun exitFullscreen() {
+        val callback = fullscreenCallback
+        fullscreenCallback = null
+        fullscreenView?.setOnKeyListener(null)
+        fullscreenView = null
+        callback?.onCustomViewHidden()
+        view?.requestFocus()
+    }
     fun resume() { view?.onResume() }
     fun pause() { view?.onPause() }
     fun dismissNotice() { state = state.copy(notice=null) }
@@ -160,6 +235,7 @@ class BrowserSession(private var restoredState: Bundle? = null) {
 
     fun release(target: WebView) {
         if (view !== target) return
+        exitFullscreen()
         view = null
         target.stopLoading()
         target.setOnKeyListener(null)
