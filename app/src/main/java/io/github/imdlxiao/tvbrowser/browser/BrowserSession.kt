@@ -71,7 +71,10 @@ class BrowserSession(private var restoredState: Bundle? = null) {
                 when {
                     replayingKey -> false
                     keyCode == KeyEvent.KEYCODE_MENU -> {
-                        if (event.action == KeyEvent.ACTION_UP) requestToolbarFocus()
+                        if (event.action == KeyEvent.ACTION_UP) {
+                            exitFullscreen()
+                            post { requestToolbarFocus() }
+                        }
                         true
                     }
                     keyCode in directionKeys -> {
@@ -140,14 +143,34 @@ class BrowserSession(private var restoredState: Bundle? = null) {
                 override fun onShowCustomView(custom: android.view.View, callback: CustomViewCallback) {
                     if (fullscreenView != null) { callback.onCustomViewHidden(); return }
                     fullscreenCallback = callback
-                    fullscreenView = custom
-                    custom.isFocusableInTouchMode = true
-                    custom.setOnKeyListener { _, code, event ->
-                        if (code in directionKeys || code == KeyEvent.KEYCODE_DPAD_CENTER ||
-                            code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_MENU ||
-                            code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) this@apply.dispatchKeyEvent(event) else false
+                    val host = FullscreenHost(context, custom) { event ->
+                        val code = event.keyCode
+                        if (code == KeyEvent.KEYCODE_BACK) {
+                            if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) backFullscreen()
+                            true
+                        } else if (code == KeyEvent.KEYCODE_MENU) {
+                            if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
+                                exitFullscreen()
+                                post { requestToolbarFocus() }
+                            }
+                            true
+                        } else if (code in directionKeys || code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER) {
+                            val key = directionKeys[code] ?: "Enter"
+                            if (event.action == KeyEvent.ACTION_DOWN && (key != "Enter" || event.repeatCount == 0)) {
+                                val saved = KeyEvent(event)
+                                // The original WebView is not the focused Android view in fullscreen.
+                                navigate(key) { result ->
+                                    if (result != "handled" && result != "toolbar") {
+                                        custom.dispatchKeyEvent(saved)
+                                        custom.dispatchKeyEvent(KeyEvent.changeAction(saved, KeyEvent.ACTION_UP))
+                                    }
+                                }
+                            }
+                            true
+                        } else false
                     }
-                    custom.requestFocus()
+                    fullscreenView = host
+                    host.requestFocus()
                 }
                 override fun onHideCustomView() { exitFullscreen() }
                 override fun onProgressChanged(view: WebView, newProgress: Int) {
@@ -178,9 +201,16 @@ class BrowserSession(private var restoredState: Bundle? = null) {
     }
 
     fun back(onHome: () -> Unit) {
-        if (fullscreenView != null) { exitFullscreen(); return }
+        if (fullscreenView != null) {
+            backFullscreen()
+            return
+        }
         if (state.error != null) { if (!goBack()) onHome(); return }
         navigate("Back") { if (it != "handled" && !goBack()) onHome() }
+    }
+
+    private fun backFullscreen() {
+        navigate("Back") { if (it != "handled") exitFullscreen() }
     }
 
     fun load(url: String) { if (AddressResolver.isWebUrl(url)) { state=state.copy(url=url, error=null); view?.loadUrl(url) } }
@@ -222,7 +252,7 @@ class BrowserSession(private var restoredState: Bundle? = null) {
     fun exitFullscreen() {
         val callback = fullscreenCallback
         fullscreenCallback = null
-        fullscreenView?.setOnKeyListener(null)
+        (fullscreenView as? android.view.ViewGroup)?.removeAllViews()
         fullscreenView = null
         callback?.onCustomViewHidden()
         view?.requestFocus()

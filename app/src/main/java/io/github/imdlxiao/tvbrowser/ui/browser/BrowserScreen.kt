@@ -39,7 +39,9 @@ fun BrowserScreen(initialUrl: String, onHome: () -> Unit, saveBookmark: ((String
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     var editingAddress by remember { mutableStateOf(false) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    session.requestToolbarFocus = { toolbarFocus.requestFocus() }
+    session.requestToolbarFocus = {
+        if (session.fullscreenView == null) toolbarFocus.requestFocus()
+    }
     DisposableEffect(session, lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -57,7 +59,10 @@ fun BrowserScreen(initialUrl: String, onHome: () -> Unit, saveBookmark: ((String
     LaunchedEffect(state.error, windowFocused) {
         if (windowFocused) {
             withFrameNanos { }
-            if (state.error != null) retryFocus.requestFocus() else toolbarFocus.requestFocus()
+            val fullscreen = session.fullscreenView
+            if (fullscreen != null) fullscreen.requestFocus()
+            else if (state.error != null) retryFocus.requestFocus()
+            else toolbarFocus.requestFocus()
         }
     }
     LaunchedEffect(state.notice) {

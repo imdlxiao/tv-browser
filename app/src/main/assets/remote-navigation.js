@@ -9,12 +9,24 @@
     var root = dialogs.length ? dialogs[dialogs.length - 1] : document;
     return Array.prototype.filter.call(root.querySelectorAll('button,a[href],input,select,textarea,summary,[tabindex],[role="button"]'), function (node) {
       var rect = node.getBoundingClientRect();
-      return !node.disabled && node.tabIndex >= 0 && rect.width > 0 && rect.height > 0 && getComputedStyle(node).visibility !== 'hidden';
+      return !node.disabled && !node.matches(':disabled') && !node.closest('[hidden],[aria-disabled="true"]') &&
+        node.tabIndex >= 0 && rect.width > 0 && rect.height > 0 && getComputedStyle(node).visibility !== 'hidden';
     });
   }
   window.__tvBrowserNavigate = function (key) {
-    if (window.MemoirTV && typeof window.MemoirTV.handleKey === 'function') return window.MemoirTV.handleKey(key);
+    if (window.MemoirTV && typeof window.MemoirTV.handleKey === 'function') {
+      var delegated = window.MemoirTV.handleKey(key);
+      if (key !== 'Enter' || delegated !== 'native') return delegated;
+    }
     var active = document.activeElement, list = controls(), rect, best, score = Infinity;
+    // Only the native fullscreen host sends Enter here; ordinary pages keep trusted DOM keys.
+    if (key === 'Enter' && list.indexOf(active) >= 0) {
+      if (/^(BUTTON|A|SUMMARY)$/.test(active.tagName) || active.getAttribute('role') === 'button' ||
+          (active.tagName === 'INPUT' && /^(button|submit|reset|checkbox|radio)$/.test(active.type))) {
+        active.click(); return 'handled';
+      }
+      return 'native';
+    }
     if (key.indexOf('Media') === 0) {
       var video = document.querySelector('video');
       if (!video) return 'native';
@@ -25,6 +37,8 @@
       return 'handled';
     }
     if (key === 'Back') {
+      if (document.fullscreenElement && document.exitFullscreen) { document.exitFullscreen(); return 'handled'; }
+      if (document.webkitFullscreenElement && document.webkitExitFullscreen) { document.webkitExitFullscreen(); return 'handled'; }
       var dialogs = document.querySelectorAll('dialog[open]');
       if (dialogs.length && dialogs[dialogs.length - 1].close) { dialogs[dialogs.length - 1].close(); return 'handled'; }
       return 'unhandled';
