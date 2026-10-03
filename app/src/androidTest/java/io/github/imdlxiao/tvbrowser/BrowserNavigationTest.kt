@@ -22,7 +22,7 @@ class BrowserNavigationTest {
 
     @Test fun navigationCallbacksDoNotReloadAndBackUsesWebHistory() {
         FixtureServer().use { server ->
-            compose.waitUntil(5000) { compose.onAllNodesWithText("百度").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(5000) { compose.onAllNodesWithText("回忆录").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("搜索你喜欢的内容，或输入网址").performClick()
             compose.onNode(hasSetTextAction()).performTextInput(server.url)
             compose.onNodeWithText("前往").performClick()

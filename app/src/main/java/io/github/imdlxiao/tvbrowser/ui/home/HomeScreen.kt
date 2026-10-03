@@ -64,7 +64,7 @@ fun HomeScreen(state: HomeUiState, onQuery: (String) -> Unit, onSearch: () -> Bo
         listOf(Night, Color(0xFF102436), Night),
     ))) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(3), state = gridState,
+            columns = GridCells.Fixed(state.bookmarks.size.coerceIn(1, 3)), state = gridState,
             contentPadding = PaddingValues(horizontal=40.dp, vertical=28.dp),
             horizontalArrangement = Arrangement.spacedBy(18.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),

@@ -11,12 +11,13 @@ import org.junit.Test
 class HomeNavigationTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
-    @Test fun remoteMovesBetweenBookmarksAndSearch() {
+    @Test fun remoteMovesBetweenOnlyMemoirAndSearch() {
         compose.waitUntil(5000) {
             compose.onAllNodes(hasText("回忆录") and isFocused()).fetchSemanticsNodes().isNotEmpty()
         }
-        key(KeyEvent.KEYCODE_DPAD_RIGHT)
-        compose.onNode(hasText("百度") and hasClickAction()).assertIsFocused()
+        listOf("百度", "哔哩哔哩", "爱奇艺", "腾讯视频", "优酷", "知乎").forEach {
+            compose.onNodeWithText(it).assertDoesNotExist()
+        }
         key(KeyEvent.KEYCODE_DPAD_UP)
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         compose.onNodeWithText("想去哪里？").assertIsDisplayed()
@@ -28,7 +29,7 @@ class HomeNavigationTest {
     }
 
     @Test fun homeBackShowsExitConfirmationAndCanResume() {
-        compose.waitUntil(5000) { compose.onAllNodesWithText("百度").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5000) { compose.onAllNodesWithText("回忆录").fetchSemanticsNodes().isNotEmpty() }
         key(KeyEvent.KEYCODE_BACK)
         compose.waitUntil(5000) { compose.onAllNodesWithText("结束这次探索？").fetchSemanticsNodes().isNotEmpty() }
         compose.waitForIdle()
